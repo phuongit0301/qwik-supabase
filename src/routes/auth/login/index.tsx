@@ -1,11 +1,13 @@
-import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
-import { Link, routeAction$, Form, useLocation, useNavigate, type DocumentHead } from "@builder.io/qwik-city";
+import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
+import { routeAction$, useLocation, type DocumentHead } from "@builder.io/qwik-city";
 import { login, setSessionOnClient } from "~/lib/auth";
 import { validateLoginForm, type LoginFormData } from "~/lib/validation";
 import { InputField } from "~/components/auth/input-field";
 import { Button } from "~/components/auth/button";
-import { FormError } from "~/components/auth/form-error";
-import { FormSuccess } from "~/components/auth/form-success";
+import { AuthForm } from "~/components/auth/auth-form";
+import { AuthFooter } from "~/components/auth/auth-footer";
+import { useAuthRedirect } from "~/hooks/use-auth-redirect";
+import { useAuthSessionCheck } from "~/hooks/use-auth-session-check";
 
 export const useLoginAction = routeAction$(async (formData, { fail }) => {
   const formValues: LoginFormData = {
@@ -42,24 +44,21 @@ export const useLoginAction = routeAction$(async (formData, { fail }) => {
 export default component$(() => {
   const loginAction = useLoginAction();
   const location = useLocation();
-  const navigate = useNavigate();
   const showSuccessMessage = useSignal(false);
 
-  // Handle successful login - store tokens on client and redirect
-  // eslint-disable-next-line qwik/no-use-visible-task
-  useVisibleTask$(async ({ track }) => {
-    track(() => loginAction.value);
+  // Check if user is already logged in
+  useAuthSessionCheck();
 
-    if (loginAction.value && !loginAction.value.failed) {
-      const { accessToken, refreshToken } = loginAction.value as any;
+  // Handle successful login - store tokens on client and redirect
+  useAuthRedirect({
+    action: loginAction,
+    onSuccess: $(async (value: any) => {
+      const { accessToken, refreshToken } = value;
       if (accessToken && refreshToken) {
-        // Store session in browser localStorage via Supabase client
-        const success = await setSessionOnClient(accessToken, refreshToken);
-        if (success) {
-          await navigate("/");
-        }
+        await setSessionOnClient(accessToken, refreshToken);
       }
-    }
+    }),
+    redirectTo: "/",
   });
 
   // Check if redirected from register page or handle Supabase hash fragment
@@ -92,72 +91,67 @@ export default component$(() => {
   });
 
   return (
-    <div class="bg-white rounded-lg shadow-md p-8">
-      <h1 class="text-2xl font-bold text-center text-gray-800 mb-6">Login</h1>
+    <AuthForm
+      title="Login"
+      action={loginAction}
+      successMessage={
+        showSuccessMessage.value
+          ? "Registration successful! Please check your email to verify your account, then login here."
+          : undefined
+      }
+    >
+      <InputField
+        label="Email"
+        type="email"
+        id="email"
+        name="email"
+        placeholder="Enter your email"
+        required
+        error={
+          loginAction.value?.failed
+            ? (loginAction.value as any).fieldErrors?.email
+            : undefined
+        }
+      />
 
-      {showSuccessMessage.value && (
-        <FormSuccess message="Registration successful! Please check your email to verify your account, then login here." />
-      )}
+      <InputField
+        label="Password"
+        type="password"
+        id="password"
+        name="password"
+        placeholder="Enter your password"
+        required
+        error={
+          loginAction.value?.failed
+            ? (loginAction.value as any).fieldErrors?.password
+            : undefined
+        }
+      />
 
-      {loginAction.value?.failed && loginAction.value.message && (
-        <FormError message={loginAction.value.message} />
-      )}
+      <div class="flex items-center justify-between">
+        <label class="flex items-center">
+          <input
+            type="checkbox"
+            name="remember"
+            class="w-4 h-4 text-blue-600 rounded"
+          />
+          <span class="ml-2 text-sm text-gray-600">Remember me</span>
+        </label>
+        <a href="#" class="text-sm text-blue-600 hover:underline">
+          Forgot password?
+        </a>
+      </div>
 
-      <Form action={loginAction} class="space-y-4">
-        <InputField
-          label="Email"
-          type="email"
-          id="email"
-          name="email"
-          placeholder="Enter your email"
-          required
-          error={
-            loginAction.value?.failed
-              ? (loginAction.value as any).fieldErrors?.email
-              : undefined
-          }
-        />
+      <Button type="submit" variant="primary">
+        {loginAction.isRunning ? "Signing In..." : "Sign In"}
+      </Button>
 
-        <InputField
-          label="Password"
-          type="password"
-          id="password"
-          name="password"
-          placeholder="Enter your password"
-          required
-          error={
-            loginAction.value?.failed
-              ? (loginAction.value as any).fieldErrors?.password
-              : undefined
-          }
-        />
-
-        <div class="flex items-center justify-between">
-          <label class="flex items-center">
-            <input
-              type="checkbox"
-              name="remember"
-              class="w-4 h-4 text-blue-600 rounded"
-            />
-            <span class="ml-2 text-sm text-gray-600">Remember me</span>
-          </label>
-          <a href="#" class="text-sm text-blue-600 hover:underline">
-            Forgot password?
-          </a>
-        </div>
-
-        <Button type="submit" variant="primary">
-          {loginAction.isRunning ? "Signing In..." : "Sign In"}
-        </Button>
-      </Form>
-
-      <p class="mt-6 text-center text-sm text-gray-600">
-        Don't have an account?{" "}
-        <Link href="/auth/register" class="text-blue-600 hover:underline font-medium">
-          Register
-        </Link>
-      </p>
-    </div>
+      <AuthFooter
+        question="Don't have an account?"
+        linkText="Register"
+        linkHref="/auth/register"
+      />
+    </AuthForm>
   );
 });
 
