@@ -1,12 +1,12 @@
-import { component$ } from "@builder.io/qwik";
-import { Link, routeAction$, Form, type DocumentHead } from "@builder.io/qwik-city";
-import { register } from "~/lib/auth";
+import { component$, useVisibleTask$ } from "@builder.io/qwik";
+import { Link, routeAction$, Form, useNavigate, type DocumentHead } from "@builder.io/qwik-city";
+import { registerWithOTP } from "~/lib/auth";
 import { validateRegisterForm, type RegisterFormData } from "~/lib/validation";
 import { InputField } from "~/components/auth/input-field";
 import { Button } from "~/components/auth/button";
 import { FormError } from "~/components/auth/form-error";
 
-export const useRegisterAction = routeAction$(async (formData, { fail, redirect: redirectFn, url }) => {
+export const useRegisterAction = routeAction$(async (formData, { fail }) => {
   const formValues: RegisterFormData = {
     name: (formData.name as string) || "",
     email: (formData.email as string) || "",
@@ -23,9 +23,8 @@ export const useRegisterAction = routeAction$(async (formData, { fail, redirect:
     });
   }
 
-  // Register user - pass redirect URL for email confirmation
-  const redirectUrl = `${url.origin}/auth/login?registered=true`;
-  const result = await register(formValues.email, formValues.password, redirectUrl);
+  // Register user with OTP flow
+  const result = await registerWithOTP(formValues.email, formValues.password, formValues.name);
 
   if (!result.success) {
     return fail(400, {
@@ -33,14 +32,34 @@ export const useRegisterAction = routeAction$(async (formData, { fail, redirect:
     });
   }
 
-  // Redirect to login page after successful registration
-  throw redirectFn(302, "/auth/login?registered=true");
+  // Return success with email and expiry for redirect
+  return {
+    success: true,
+    email: result.email,
+    otpExpiry: result.otpExpiry,
+  };
 });
 
 export default component$(() => {
   const registerAction = useRegisterAction();
+  const navigate = useNavigate();
 
-  // Auth check is handled by auth layout
+  // Redirect to OTP verification page on successful registration
+  // eslint-disable-next-line qwik/no-use-visible-task
+  useVisibleTask$(async ({ track }) => {
+    track(() => registerAction.value);
+
+    if (registerAction.value && !registerAction.value.failed) {
+      const { email, otpExpiry } = registerAction.value as any;
+      if (email) {
+        const params = new URLSearchParams({ email });
+        if (otpExpiry) {
+          params.set("expiry", otpExpiry);
+        }
+        await navigate(`/auth/verify-otp?${params.toString()}`);
+      }
+    }
+  });
 
   return (
     <div class="bg-white rounded-lg shadow-md p-8">

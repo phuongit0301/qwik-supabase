@@ -133,3 +133,41 @@ export const validateLoginForm = (
     errors,
   };
 };
+
+// OTP Validation
+export const validateOTP = (otp: string): ValidationResult => {
+  if (!otp) {
+    return { isValid: false, error: "OTP is required" };
+  }
+
+  if (!/^\d{6}$/.test(otp)) {
+    return { isValid: false, error: "OTP must be 6 digits" };
+  }
+
+  return { isValid: true };
+};
+
+export interface OTPFormData {
+  otp: string;
+  email: string;
+}
+
+export interface OTPValidationErrors {
+  otp?: string;
+}
+
+export const validateOTPForm = (
+  data: OTPFormData
+): { isValid: boolean; errors: OTPValidationErrors } => {
+  const errors: OTPValidationErrors = {};
+
+  const otpValidation = validateOTP(data.otp);
+  if (!otpValidation.isValid) {
+    errors.otp = otpValidation.error;
+  }
+
+  return {
+    isValid: Object.keys(errors).length === 0,
+    errors,
+  };
+};
